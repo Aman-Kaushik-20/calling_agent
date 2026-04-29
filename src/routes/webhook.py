@@ -1,0 +1,30 @@
+from fastapi import APIRouter, Request, status
+from fastapi.responses import JSONResponse
+
+from src.models.bolna import CallExecutionResponse
+from src.services.alert_service import AlertService
+from src.utils.logger import logger
+
+router = APIRouter(prefix="/webhook", tags=["webhook"])
+
+
+def _alert_service(request: Request) -> AlertService:
+    return request.app.state.alert_service
+
+
+@router.post("/bolna", status_code=status.HTTP_200_OK)
+async def bolna_webhook(request: Request) -> JSONResponse:
+    raw = await request.body()
+    try:
+        execution = CallExecutionResponse.model_validate_json(raw)
+    except Exception as e:
+        logger.error(f"Bolna webhook payload could not be parsed | error={e!r} body={raw[:500]!r}")
+        return JSONResponse({"received": True}, status_code=status.HTTP_200_OK)
+
+    logger.info(
+        f"Bolna webhook received | execution_id={execution.id} status={execution.status}"
+    )
+
+    await _alert_service(request).alert_call_ended_if_eligible(execution)
+
+    return JSONResponse({"received": True}, status_code=status.HTTP_200_OK)
