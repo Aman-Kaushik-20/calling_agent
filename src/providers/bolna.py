@@ -9,7 +9,7 @@ from src.models.bolna import (
 )
 from src.utils.logger import logger
 
-
+# Specefic Error Response Schema we get from Bolna API 
 def _format_bolna_error(response: httpx.Response) -> str:
     try:
         err = ErrorResponse.model_validate_json(response.text)
@@ -17,7 +17,9 @@ def _format_bolna_error(response: httpx.Response) -> str:
     except Exception:
         return f"body={response.text}"
 
-
+# Provider Class for Bolna AI - 2 main functions-
+# 1. Schedule Calls
+# 2. Get Call Execution Result
 class BolnaProvider:
     def __init__(self) -> None:
         self.bolna_url = settings.bolna_base_url.rstrip("/")
@@ -29,7 +31,7 @@ class BolnaProvider:
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             },
-        )
+        ) # Initialize client before-hand so runtime latency is low
 
     async def close(self) -> None:
         await self.client.aclose()

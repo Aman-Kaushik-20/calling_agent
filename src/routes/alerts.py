@@ -6,10 +6,10 @@ from src.utils.openapi import ALERT_DESCRIPTION, ALERT_RESPONSES, ALERT_SUMMARY
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
-
+# Route that Fetches the execution from Bolna, then posts a formatted alert to the configured Slack channel.
 @router.post(
     "/{execution_id}",
-    summary=ALERT_SUMMARY,
+    summary=ALERT_SUMMARY,  # For Better OpenAPI SwaggerUI Docs
     description=ALERT_DESCRIPTION,
     responses=ALERT_RESPONSES,
 )

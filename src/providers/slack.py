@@ -4,7 +4,7 @@ from src.config import settings
 from src.models.slack import SlackPostMessageRequest, SlackResponse
 from src.utils.logger import logger
 
-
+# Provider Class for Slack - Just for Sending Message to a Slack Channel
 class SlackProvider:
     def __init__(self) -> None:
         self.slack_base_url = settings.slack_base_url.rstrip("/")
@@ -16,7 +16,7 @@ class SlackProvider:
                 "Authorization": f"Bearer {self.slack_bot_token}",
                 "Content-Type": "application/json; charset=utf-8",
             },
-        )
+        ) # Initialize client before-hand so runtime latency is low
 
     async def close(self) -> None:
         await self.client.aclose()

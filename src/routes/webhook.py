@@ -12,11 +12,12 @@ from src.utils.openapi import (
 
 router = APIRouter(prefix="/webhook", tags=["webhook"])
 
+# Bolna calls this endpoint on every status change and after filtering status type , this route posts a formatted attachment to the configured Slack channel
 
 @router.post(
     "/bolna",
     status_code=status.HTTP_200_OK,
-    summary=WEBHOOK_SUMMARY,
+    summary=WEBHOOK_SUMMARY, # For Better OpenAPI SwaggerUI Docs
     description=WEBHOOK_DESCRIPTION,
     openapi_extra=WEBHOOK_OPENAPI_EXTRA,
     responses=WEBHOOK_RESPONSES,

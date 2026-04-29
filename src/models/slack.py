@@ -17,13 +17,13 @@ class SlackAttachment(BaseModel):
     callback_id: Optional[str] = None
     actions: Optional[list[SlackAction]] = None
 
-
+# Slack Request to send to the POST request for messages
 class SlackPostMessageRequest(BaseModel):
     channel: str
     text: str
     attachments: Optional[list[SlackAttachment]] = None
 
-
+# Slack Response of the POST request for messages
 class SlackResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 

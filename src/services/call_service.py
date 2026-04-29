@@ -2,7 +2,7 @@ from src.models.bolna import CallExecutionResponse, CallRequestModel, CallRespon
 from src.providers.bolna import BolnaProvider
 from src.utils.logger import logger
 
-
+# Service to Schedule call or Get status check of the calls(it uses provider of bolna)
 class CallService:
     def __init__(self, bolna: BolnaProvider) -> None:
         self.bolna = bolna

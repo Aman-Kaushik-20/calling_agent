@@ -15,11 +15,12 @@ from src.utils.openapi import (
 
 router = APIRouter(prefix="/calls", tags=["calls"])
 
+# Route that Forwards the request to Bolna's `POST /call` and returns the queued `execution_id
 
 @router.post(
     "",
     response_model=CallResponseModel,
-    summary=MAKE_CALL_SUMMARY,
+    summary=MAKE_CALL_SUMMARY, # For Better OpenAPI SwaggerUI Docs
     description=MAKE_CALL_DESCRIPTION,
     responses=MAKE_CALL_RESPONSES,
 )
@@ -35,12 +36,12 @@ async def make_call(
         logger.error(f"Bolna transport error in make_call | error={e!r}")
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Bolna upstream error")
 
-
+# Route that Fetch a call's execution details
 @router.get(
     "/{execution_id}",
     response_model=CallExecutionResponse,
     summary=GET_CALL_SUMMARY,
-    description=GET_CALL_DESCRIPTION,
+    description=GET_CALL_DESCRIPTION, # For Better OpenAPI SwaggerUI Docs
     responses=GET_CALL_RESPONSES,
 )
 async def get_call(execution_id: str, request: Request) -> CallExecutionResponse:

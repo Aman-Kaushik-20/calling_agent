@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
+# Pydantic BaseSettings Instance for storing Secrets from .env
 class Settings(BaseSettings):
     bolna_api_key: str
     bolna_base_url: str = "https://api.bolna.ai"

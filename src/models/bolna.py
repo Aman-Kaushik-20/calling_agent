@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, computed_field
 
 IST = ZoneInfo("Asia/Kolkata")
 
-
+# All Possible Enums for Status of the scheduled call
 class CallStatus(str, Enum):
     SCHEDULED = "scheduled"
     QUEUED = "queued"
@@ -26,7 +26,7 @@ class CallStatus(str, Enum):
     STOPPED = "stopped"
     ERROR = "error"
 
-
+# All Call events to skip when alerting - as assignment said to "sends a Slack alert whenever a Bolna call ends"
 ALERT_SKIP_STATUSES = [
     CallStatus.SCHEDULED,
     CallStatus.QUEUED,
@@ -37,7 +37,7 @@ ALERT_SKIP_STATUSES = [
     CallStatus.CANCELED,
 ]
 
-
+# Slack has option to send messages with a certain color scheme
 STATUS_COLORS: dict[CallStatus, str] = {
     CallStatus.COMPLETED: "#2eb67d",
     CallStatus.CALL_DISCONNECTED: "#ecb22e",
@@ -59,7 +59,7 @@ class TelephonyProvider(str, Enum):
     TWILIO = "twilio"
     PLIVO = "plivo"
 
-
+# Schema for Payload for Scheduling Calls
 class CallRequestModel(BaseModel):
     agent_id: uuid.UUID
     recipient_phone_number: str
@@ -83,7 +83,7 @@ class CallRequestModel(BaseModel):
         t = self.time or datetime.datetime.now(tz).time()
         return datetime.datetime.combine(d, t).replace(tzinfo=tz).isoformat(timespec="milliseconds")
 
-
+# Schema for Response for Scheduling Calls
 class CallResponseModel(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
@@ -101,7 +101,7 @@ class CallResponseModel(BaseModel):
     status: str
     execution_id: str
 
-
+# Schema for Error Response for fetching call execution result
 class ErrorResponse(BaseModel):
     error: int
     message: str
@@ -159,7 +159,7 @@ class BatchRunData(BaseModel):
     updated_at: Optional[datetime.datetime] = None
     retried: Optional[int] = None
 
-
+# Schema for Response while fetching call execution result
 class CallExecutionResponse(BaseModel):
     model_config = ConfigDict(
         extra="allow",

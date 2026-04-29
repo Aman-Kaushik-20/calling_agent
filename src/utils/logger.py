@@ -1,7 +1,7 @@
 import sys
 
 from loguru import logger as _logger
-
+# Simple Logging Util
 _logger.remove()
 _logger.add(
     sys.stdout,

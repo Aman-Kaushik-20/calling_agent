@@ -15,6 +15,8 @@ from src.utils.logger import logger
 from src.utils.openapi import API_DESCRIPTION, OPENAPI_TAGS
 
 
+
+# Context Manager - for building provider/service objects once and stash on app.state so handlers reuse them. Better Performannce and low runtime latency.
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting calling-agent service")
@@ -23,8 +25,8 @@ async def lifespan(app: FastAPI):
 
     app.state.bolna_provider = bolna_provider
     app.state.slack_provider = slack_provider
-    app.state.call_service = CallService(bolna_provider)
-    app.state.alert_service = AlertService(slack_provider)
+    app.state.call_service = CallService(bolna_provider) # Bolna AI Service Object
+    app.state.alert_service = AlertService(slack_provider) # Slack Alert Service Object
 
     try:
         yield
@@ -36,15 +38,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Calling Agent",
-    description=API_DESCRIPTION,
+    description=API_DESCRIPTION, # For Better OpenAPI SwaggerUI Docs
     version="0.1.0",
-    openapi_tags=OPENAPI_TAGS,
+    openapi_tags=OPENAPI_TAGS, # For Better OpenAPI SwaggerUI Docs
     lifespan=lifespan,
 )
-app.include_router(health_router)
-app.include_router(calls_router)
-app.include_router(alerts_router)
-app.include_router(webhook_router)
+app.include_router(health_router) # Health Check Router
+app.include_router(calls_router) # Route for Scheduling Calls from available agents
+app.include_router(alerts_router) # Route for Slack ALert via execution_id
+app.include_router(webhook_router) # Route for Webhook Support for Slack ALert via Bolna AI Analytics Integration
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ from src.utils.openapi import HEALTH_DESCRIPTION, HEALTH_RESPONSES, HEALTH_SUMMA
 
 router = APIRouter()
 
-
+# Health Check Route
 @router.get(
     "/health",
     tags=["health"],

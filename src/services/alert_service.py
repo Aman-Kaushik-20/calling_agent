@@ -10,7 +10,7 @@ class AlertService:
         self.slack = slack
         self.channel = settings.slack_alert_channel
 
-    def _format_duration(self, raw: str | None) -> str:
+    def _format_duration(self, raw: str | None) -> str: # For Converting seconds to minutes:seconds
         if not raw:
             return "unknown"
         try:
@@ -23,7 +23,7 @@ class AlertService:
         secs = seconds % 60
         return f"{minutes}m {secs}s"
 
-    def _build_attachment(self, execution: CallExecutionResponse) -> SlackAttachment:
+    def _build_attachment(self, execution: CallExecutionResponse) -> SlackAttachment: # Format the raw API Response (CallExecutionResponse) to a Structured format we can send to Slack Channel (SlackAttachment)
         duration_raw = execution.telephony_data.duration if execution.telephony_data else None
         transcript = execution.transcript or "_No transcript available_"
         status_value = execution.status.value if execution.status else "unknown"
@@ -43,7 +43,7 @@ class AlertService:
             color=color,
         )
 
-    async def send_call_ended_alert(self, execution: CallExecutionResponse) -> None:
+    async def send_call_ended_alert(self, execution: CallExecutionResponse) -> None: # Sends POST Request to Slack
         message = SlackPostMessageRequest(
             channel=self.channel,
             text=f"📞 Call Ended — `{execution.id}`",
@@ -52,7 +52,7 @@ class AlertService:
         await self.slack.post_message(message)
 
     async def alert_if_eligible(self, execution: CallExecutionResponse) -> bool:
-        if execution.status is None or execution.status in ALERT_SKIP_STATUSES:
+        if execution.status is None or execution.status in ALERT_SKIP_STATUSES: # Skip when the call hasn't ended yet
             logger.info(f"Skipping Slack alert | execution_id={execution.id} status={execution.status}")
             return False
         try:
