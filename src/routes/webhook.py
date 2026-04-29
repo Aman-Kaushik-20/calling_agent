@@ -3,11 +3,24 @@ from fastapi.responses import JSONResponse
 
 from src.models.bolna import CallExecutionResponse
 from src.utils.logger import logger
+from src.utils.openapi import (
+    WEBHOOK_DESCRIPTION,
+    WEBHOOK_OPENAPI_EXTRA,
+    WEBHOOK_RESPONSES,
+    WEBHOOK_SUMMARY,
+)
 
 router = APIRouter(prefix="/webhook", tags=["webhook"])
 
 
-@router.post("/bolna", status_code=status.HTTP_200_OK)
+@router.post(
+    "/bolna",
+    status_code=status.HTTP_200_OK,
+    summary=WEBHOOK_SUMMARY,
+    description=WEBHOOK_DESCRIPTION,
+    openapi_extra=WEBHOOK_OPENAPI_EXTRA,
+    responses=WEBHOOK_RESPONSES,
+)
 async def bolna_webhook(request: Request) -> JSONResponse:
     raw = await request.body()
     try:

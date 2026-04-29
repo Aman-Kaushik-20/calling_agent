@@ -2,11 +2,17 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request, status
 
 from src.utils.logger import logger
+from src.utils.openapi import ALERT_DESCRIPTION, ALERT_RESPONSES, ALERT_SUMMARY
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 
-@router.post("/{execution_id}")
+@router.post(
+    "/{execution_id}",
+    summary=ALERT_SUMMARY,
+    description=ALERT_DESCRIPTION,
+    responses=ALERT_RESPONSES,
+)
 async def alert_for_execution(execution_id: str, request: Request) -> dict[str, object]:
     try:
         execution = await request.app.state.call_service.get_execution(execution_id)

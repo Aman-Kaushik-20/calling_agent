@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Any, Optional, Self
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, computed_field
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -85,6 +85,18 @@ class CallRequestModel(BaseModel):
 
 
 class CallResponseModel(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "message": "done",
+                    "status": "queued",
+                    "execution_id": "7ce95e83-0b1b-452d-b687-91bf5d921bb3",
+                }
+            ]
+        }
+    )
+
     message: str
     status: str
     execution_id: str
@@ -149,7 +161,32 @@ class BatchRunData(BaseModel):
 
 
 class CallExecutionResponse(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": "7ce95e83-0b1b-452d-b687-91bf5d921bb3",
+                    "agent_id": "3ead2b76-6776-4bce-983f-b7e0b8bb4754",
+                    "status": "completed",
+                    "transcript": "Agent: Hi, am I speaking with Aman?\nUser: Yes, who's this?\n...",
+                    "conversation_time": 42.0,
+                    "total_cost": 0.0125,
+                    "telephony_data": {
+                        "duration": "42",
+                        "to_number": "+919354885227",
+                        "from_number": "+918035735856",
+                        "provider": "plivo",
+                        "call_type": "outbound",
+                        "hangup_by": "User",
+                        "hangup_reason": "Normal hangup",
+                    },
+                    "created_at": "2026-04-29T12:59:27.064546Z",
+                    "updated_at": "2026-04-29T13:02:22.443313Z",
+                }
+            ]
+        },
+    )
 
     id: Optional[uuid.UUID] = None
     agent_id: Optional[uuid.UUID] = None

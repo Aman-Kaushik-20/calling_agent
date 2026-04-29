@@ -12,6 +12,7 @@ from src.routes.webhook import router as webhook_router
 from src.services.alert_service import AlertService
 from src.services.call_service import CallService
 from src.utils.logger import logger
+from src.utils.openapi import API_DESCRIPTION, OPENAPI_TAGS
 
 
 @asynccontextmanager
@@ -33,7 +34,13 @@ async def lifespan(app: FastAPI):
         await slack_provider.close()
 
 
-app = FastAPI(title="Calling Agent", lifespan=lifespan)
+app = FastAPI(
+    title="Calling Agent",
+    description=API_DESCRIPTION,
+    version="0.1.0",
+    openapi_tags=OPENAPI_TAGS,
+    lifespan=lifespan,
+)
 app.include_router(health_router)
 app.include_router(calls_router)
 app.include_router(alerts_router)
