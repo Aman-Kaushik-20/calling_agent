@@ -27,6 +27,29 @@ class CallStatus(str, Enum):
     ERROR = "error"
 
 
+ALERT_SKIP_STATUSES = [
+    CallStatus.SCHEDULED,
+    CallStatus.QUEUED,
+    CallStatus.RESCHEDULED,
+    CallStatus.INITIATED,
+    CallStatus.RINGING,
+    CallStatus.IN_PROGRESS,
+    CallStatus.CANCELED,
+]
+
+
+STATUS_COLORS: dict[CallStatus, str] = {
+    CallStatus.COMPLETED: "#2eb67d",
+    CallStatus.CALL_DISCONNECTED: "#ecb22e",
+    CallStatus.BUSY: "#ec2ed6",
+    CallStatus.NO_ANSWER: "#919191",
+    CallStatus.FAILED: "#e01e5a",
+    CallStatus.ERROR: "#e01e5a",
+    CallStatus.STOPPED: "#919191",
+    CallStatus.BALANCE_LOW: "#e8912d",
+}
+
+
 class CallType(str, Enum):
     OUTBOUND = "outbound"
     INBOUND = "inbound"

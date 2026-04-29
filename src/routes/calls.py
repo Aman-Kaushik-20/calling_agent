@@ -1,26 +1,16 @@
 import httpx
 from fastapi import APIRouter, HTTPException, Request, status
 
-from src.models.bolna import (
-    CallExecutionResponse,
-    CallRequestModel,
-    CallResponseModel,
-)
-from src.services.call_service import CallService
+from src.models.bolna import CallExecutionResponse, CallRequestModel, CallResponseModel
 from src.utils.logger import logger
 
 router = APIRouter(prefix="/calls", tags=["calls"])
 
 
-def _service(request: Request) -> CallService:
-    return request.app.state.call_service
-
-
-@router.post("", response_model=CallResponseModel, status_code=status.HTTP_200_OK)
+@router.post("", response_model=CallResponseModel)
 async def make_call(payload: CallRequestModel, request: Request) -> CallResponseModel:
-    service = _service(request)
     try:
-        return await service.initiate_call(payload)
+        return await request.app.state.call_service.initiate_call(payload)
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
     except httpx.HTTPError as e:
@@ -30,9 +20,8 @@ async def make_call(payload: CallRequestModel, request: Request) -> CallResponse
 
 @router.get("/{execution_id}", response_model=CallExecutionResponse)
 async def get_call(execution_id: str, request: Request) -> CallExecutionResponse:
-    service = _service(request)
     try:
-        return await service.get_execution(execution_id)
+        return await request.app.state.call_service.get_execution(execution_id)
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
     except httpx.HTTPError as e:
