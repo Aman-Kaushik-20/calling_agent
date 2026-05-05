@@ -3,50 +3,69 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 
+from src.config import settings
 from src.providers.bolna import BolnaProvider
+from src.providers.clickup import ClickUpProvider
+from src.providers.discord import DiscordProvider
+from src.providers.mattermost import MattermostProvider
 from src.providers.slack import SlackProvider
 from src.routes.alerts import router as alerts_router
 from src.routes.calls import router as calls_router
 from src.routes.health import router as health_router
 from src.routes.webhook import router as webhook_router
-from src.services.alert_service import AlertService
 from src.services.call_service import CallService
 from src.utils.logger import logger
 from src.utils.openapi import API_DESCRIPTION, OPENAPI_TAGS
 
 
-
-# Context Manager - for building provider/service objects once and stash on app.state so handlers reuse them. Better Performannce and low runtime latency.
+# Context Manager - build provider/service objects once at startup so handlers
+# reuse them. Each notifier registers itself only if its env vars are set.
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting calling-agent service")
     bolna_provider = BolnaProvider()
-    slack_provider = SlackProvider()
+
+    notifiers = []
+    if settings.slack_bot_token and settings.slack_alert_channel:
+        notifiers.append(SlackProvider())
+    if settings.discord_webhook_url:
+        notifiers.append(DiscordProvider())
+    if settings.mattermost_webhook_url:
+        notifiers.append(MattermostProvider())
+    if settings.clickup_api_token and settings.clickup_task_id:
+        notifiers.append(ClickUpProvider())
 
     app.state.bolna_provider = bolna_provider
-    app.state.slack_provider = slack_provider
-    app.state.call_service = CallService(bolna_provider) # Bolna AI Service Object
-    app.state.alert_service = AlertService(slack_provider) # Slack Alert Service Object
+    app.state.call_service = CallService(bolna_provider)
+    app.state.notifiers = notifiers
+
+    if notifiers:
+        logger.info(f"Enabled notifiers: {[n.name for n in notifiers]}")
+    else:
+        logger.warning(
+            "No notifiers enabled — webhook events will be received but not relayed anywhere"
+        )
 
     try:
         yield
     finally:
         logger.info("Shutting down calling-agent service")
         await bolna_provider.close()
-        await slack_provider.close()
+        for n in notifiers:
+            await n.close()
 
 
 app = FastAPI(
     title="Calling Agent",
-    description=API_DESCRIPTION, # For Better OpenAPI SwaggerUI Docs
-    version="0.1.0",
-    openapi_tags=OPENAPI_TAGS, # For Better OpenAPI SwaggerUI Docs
+    description=API_DESCRIPTION,
+    version="0.2.0",
+    openapi_tags=OPENAPI_TAGS,
     lifespan=lifespan,
 )
-app.include_router(health_router) # Health Check Router
-app.include_router(calls_router) # Route for Scheduling Calls from available agents
-app.include_router(alerts_router) # Route for Slack ALert via execution_id
-app.include_router(webhook_router) # Route for Webhook Support for Slack ALert via Bolna AI Analytics Integration
+app.include_router(health_router)
+app.include_router(calls_router)
+app.include_router(alerts_router)
+app.include_router(webhook_router)
 
 
 if __name__ == "__main__":

@@ -1,43 +1,46 @@
 import httpx
 
 from src.config import settings
-from src.models.slack import SlackPostMessageRequest, SlackResponse
+from src.models.bolna import CallExecutionResponse
+from src.models.slack import SlackResponse
+from src.providers._attachment import build_message
 from src.utils.logger import logger
 
-# Provider Class for Slack - Just for Sending Message to a Slack Channel
+
+# Slack notifier — owns its HTTP client, builds the message, posts to chat.postMessage.
 class SlackProvider:
+    name = "slack"
+
     def __init__(self) -> None:
-        self.slack_base_url = settings.slack_base_url.rstrip("/")
-        self.slack_bot_token = settings.slack_bot_token
+        self.base_url = settings.slack_base_url.rstrip("/")
+        self.token = settings.slack_bot_token
+        self.channel = settings.slack_alert_channel
         self.client = httpx.AsyncClient(
-            base_url=self.slack_base_url,
+            base_url=self.base_url,
             timeout=httpx.Timeout(10.0, connect=5.0),
             headers={
-                "Authorization": f"Bearer {self.slack_bot_token}",
+                "Authorization": f"Bearer {self.token}",
                 "Content-Type": "application/json; charset=utf-8",
+                "User-Agent": "calling-agent/0.2",
             },
-        ) # Initialize client before-hand so runtime latency is low
+        )
 
     async def close(self) -> None:
         await self.client.aclose()
 
-    async def post_message(self, message: SlackPostMessageRequest) -> SlackResponse:
-        logger.info(f"Posting Slack message | channel={message.channel}")
+    async def send(self, execution: CallExecutionResponse) -> None:
+        message = build_message(self.channel, execution)
+        logger.info(f"Slack post | execution_id={execution.id}")
 
-        try:
-            response = await self.client.post(
-                "/chat.postMessage",
-                json=message.model_dump(exclude_none=True),
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as e:
-            logger.error(f"Slack chat.postMessage transport error | channel={message.channel} error={e!r}")
-            raise
-
+        response = await self.client.post(
+            "/chat.postMessage", json=message.model_dump(exclude_none=True)
+        )
+        response.raise_for_status()
+        # Slack always returns HTTP 200 — real errors come back as `ok: false` in the body.
         result = SlackResponse.model_validate(response.json())
         if not result.ok:
-            logger.error(f"Slack chat.postMessage rejected | channel={message.channel} error={result.error}")
+            logger.error(
+                f"Slack post rejected | execution_id={execution.id} channel={self.channel} "
+                f"error={result.error}"
+            )
             raise RuntimeError(f"Slack API error: {result.error}")
-
-        logger.info(f"Slack message posted | channel={message.channel} ts={result.ts}")
-        return result

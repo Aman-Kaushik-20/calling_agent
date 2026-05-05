@@ -1,21 +1,36 @@
-# Calling Agent
+# Calling Agent — multi-channel Bolna event dispatcher
 
-A small FastAPI service that initiates outbound voice calls via **Bolna AI** and posts a Slack alert when a call ends.
+A small **FastAPI** service that initiates outbound voice calls via **Bolna AI** and fans every terminal-status webhook out to every configured notification destination — concurrently, with per-provider error isolation.
+
+Currently supports four destinations:
+
+- **Slack** — `chat.postMessage` with colour-coded attachments
+- **Discord** — channel webhook with rich embeds
+- **Mattermost** — incoming webhook (Slack-compatible payload)
+- **ClickUp** — task comments (one comment per call)
 
 ```
-┌────────┐  POST /calls   ┌──────────────┐  POST /call   ┌──────────┐
-│ Caller ├───────────────▶│ Calling      ├──────────────▶│ Bolna AI │
-└────────┘                │ Agent        │               └────┬─────┘
-                          │ (FastAPI)    │                    │ webhook
-                          │              │◀───────────────────┘ on status
-                          │              │   POST /webhook/bolna
-                          │              │
-                          │              │  chat.postMessage   ┌───────┐
-                          │              ├────────────────────▶│ Slack │
-                          └──────────────┘                     └───────┘
+                                          ┌──────────┐
+                                          │ Slack    │
+                                          └──────────┘
+                                          ▲
+┌────────┐  POST /calls   ┌─────────────┐ │ ┌──────────┐
+│ Caller ├───────────────▶│ Calling     ├─┴▶│ Discord  │
+└────────┘                │ Agent       │   └──────────┘
+                          │ (FastAPI)   │   ┌──────────┐
+                          │             ├──▶│Mattermost│
+            POST /webhook │             │   └──────────┘
+            /bolna ───────▶             │   ┌──────────┐
+            ◀──────────────              ├──▶│ ClickUp  │
+            POST /call    │             │   └──────────┘
+            ◀──────────────              │
+            from Bolna AI │             │
+                          └─────────────┘
 ```
 
-The webhook receiver also has a sibling endpoint, `POST /alerts/{execution_id}`, for **manually** triggering a Slack alert for any past call — handy when you don't want to expose your localhost via ngrok during development.
+A notifier is enabled when its env vars are present; missing vars silently disable it. `GET /health` reports which destinations are live.
+
+A sibling endpoint `POST /alerts/{execution_id}` triggers the same fan-out manually for any past Bolna `execution_id` — handy when developing locally without exposing your laptop via ngrok.
 
 ---
 
@@ -23,7 +38,7 @@ The webhook receiver also has a sibling endpoint, `POST /alerts/{execution_id}`,
 
 - **Python 3.12+** (`.python-version` pins `3.12`)
 - **[uv](https://docs.astral.sh/uv/)** for dependency management (`pipx install uv` or see uv's docs)
-- A Bolna account, a Slack workspace where you can install an app, and the credentials they produce — see **[SETUP.md](SETUP.md)** for a step-by-step walkthrough
+- A Bolna account, plus credentials for any subset of the four notification destinations — see **[SETUP.md](SETUP.md)** for the Slack + Bolna walkthrough
 
 ---
 
@@ -31,11 +46,13 @@ The webhook receiver also has a sibling endpoint, `POST /alerts/{execution_id}`,
 
 ### 1. Get your credentials
 
-Follow **[SETUP.md](SETUP.md)** to obtain:
+Bolna is required to fetch call data; everything else is optional. You can adopt destinations one at a time.
 
 - `BOLNA_API_KEY` — Bolna dashboard
-- `SLACK_BOT_TOKEN` — Slack app (`xoxb-…`)
-- `SLACK_ALERT_CHANNEL` — channel name (no `#`) where the bot is a member
+- `SLACK_BOT_TOKEN` + `SLACK_ALERT_CHANNEL` — Slack app (`xoxb-…`); see **[SETUP.md](SETUP.md)**
+- `DISCORD_WEBHOOK_URL` — Discord channel → Edit Channel → Integrations → Webhooks → New
+- `MATTERMOST_WEBHOOK_URL` — incoming webhook (Mattermost Cloud trial, Docker preview, or self-hosted)
+- `CLICKUP_API_TOKEN` (`pk_…`) + `CLICKUP_TASK_ID` — personal API token + the task that should receive comments
 - An `agent_id` UUID from a Bolna agent you've configured
 
 ### 2. Clone and set up the environment
@@ -49,7 +66,7 @@ uv sync
 
 # Copy and fill in the env template
 cp .env.example .env
-$EDITOR .env           # paste the values from SETUP.md
+$EDITOR .env           # paste any subset of provider credentials
 ```
 
 ### 3. Run the server
@@ -62,7 +79,7 @@ The service listens on **<http://localhost:8000>**.
 
 ### 4. Open the API docs
 
-Visit **<http://localhost:8000/docs>** — interactive Swagger UI with summaries, schemas, and ready-to-send example payloads for every endpoint.
+Visit **<http://localhost:8000/docs>** — interactive Swagger UI with summaries, schemas, and ready-to-send example payloads. Hit `/health` to confirm which notifiers your env enabled.
 
 ---
 
@@ -70,11 +87,20 @@ Visit **<http://localhost:8000/docs>** — interactive Swagger UI with summaries
 
 | Method | Path | What it does |
 |---|---|---|
-| `GET`  | `/health` | Liveness probe. |
-| `POST` | `/calls` | Initiate an outbound call via Bolna. Returns the `execution_id`. |
+| `GET`  | `/health` | Liveness probe. Body: `{status, notifiers: [...]}`. |
+| `POST` | `/calls` | Initiate an outbound call via Bolna. Returns the queued `execution_id`. |
 | `GET`  | `/calls/{execution_id}` | Fetch the full execution record from Bolna (status, transcript, telephony, costs). |
-| `POST` | `/alerts/{execution_id}` | Manually fetch an execution and post a Slack alert for it (always sends). |
-| `POST` | `/webhook/bolna` | Bolna's webhook receiver. Posts a Slack alert when the call has ended (skips in-flight statuses). Always returns `200`. |
+| `POST` | `/alerts/{execution_id}` | Manually fan an alert out to every enabled notifier (always sends, regardless of status). |
+| `POST` | `/webhook/bolna` | Bolna's webhook receiver. Fans terminal-status events out to every enabled notifier (skips in-flight). Always returns `200`. |
+
+The webhook + manual-alert responses both include a `delivered` map reporting per-provider outcome:
+
+```json
+{
+  "received": true,
+  "delivered": {"slack": "ok", "discord": "ok", "mattermost": "ok", "clickup": "ok"}
+}
+```
 
 ### Quick test (after the server is running)
 
@@ -84,7 +110,7 @@ curl -X POST http://localhost:8000/calls \
   -H 'Content-Type: application/json' \
   -d '{"agent_id": "<agent-uuid>", "recipient_phone_number": "+91XXXXXXXXXX"}'
 
-# Manually alert Slack for an existing execution
+# Manually fan-out for an existing execution
 curl -X POST http://localhost:8000/alerts/<execution_id>
 ```
 
@@ -92,17 +118,49 @@ For the full set of example bodies (scheduled calls, dynamic prompt variables, e
 
 ---
 
+## How fan-out works
+
+```python
+# src/services/notifier.py
+async def fanout(notifiers, execution) -> dict[str, str]:
+    results = await asyncio.gather(
+        *(n.send(execution) for n in notifiers),
+        return_exceptions=True,
+    )
+    return {n.name: ("ok" if not isinstance(r, Exception) else f"error: ...")
+            for n, r in zip(notifiers, results)}
+```
+
+- **All providers fire concurrently** via `asyncio.gather`.
+- `return_exceptions=True` isolates per-provider failures — Slack 401-ing won't stop Discord from posting.
+- Every error is logged with the provider name and execution_id.
+- The webhook handler always returns 200 to Bolna regardless of any provider failure (a non-2xx would trigger Bolna's retry).
+- The webhook also skips in-flight statuses (`scheduled`, `queued`, `rescheduled`, `initiated`, `ringing`, `in-progress`, `canceled`) — only terminal states get fanned out.
+
+Each provider implements the same minimal surface:
+
+```python
+class XProvider:
+    name: str
+    async def send(execution: CallExecutionResponse) -> None: ...
+    async def close() -> None: ...
+```
+
+---
+
 ## Local development vs. live webhook
 
 Bolna's webhook posts to a public URL — your `localhost` is not reachable. So:
 
-- **Locally** — use `POST /alerts/{execution_id}`. After a call finishes on Bolna, run the curl below and the Slack alert fires for that execution. No tunnel, no public URL needed.
+- **Locally** — use `POST /alerts/{execution_id}`. After a call finishes on Bolna, run the curl below and the fan-out fires for that execution. No tunnel, no public URL needed.
 
   ```bash
   curl -X POST http://localhost:8000/alerts/<execution_id>
   ```
 
-- **For real-time events** — deploy the service (see [Deployment](#deployment)) and paste the deployed URL into Bolna's **Analytics → Webhook URL** field, e.g. `https://calling-tool.onrender.com/webhook/bolna`. From then on, every status change Bolna emits hits your live `/webhook/bolna` and triggers a Slack alert automatically.
+- **For real-time events** — deploy the service (see [Deployment](#deployment)) and paste the deployed URL into Bolna's **Analytics → Webhook URL** field, e.g. `https://calling-tool.onrender.com/webhook/bolna`. From then on, every status change Bolna emits hits your live `/webhook/bolna` and triggers the fan-out automatically.
+
+> **Mattermost note:** if you point at a local Docker preview (`http://localhost:8065/...`), the deployed instance can't reach it. Either skip `MATTERMOST_WEBHOOK_URL` on the deploy, or use Mattermost Cloud / a public self-host.
 
 ---
 
@@ -111,28 +169,58 @@ Bolna's webhook posts to a public URL — your `localhost` is not reachable. So:
 ```
 calling_agent/
 ├── README.md              # this file
-├── SETUP.md               # credential walkthrough (Slack + Bolna)
+├── SETUP.md               # Slack + Bolna credential walkthrough
 ├── pyproject.toml         # deps + Python pin
 ├── uv.lock
 ├── .env.example
 ├── docs/img/              # screenshots referenced from SETUP.md
+├── temp/
+│   └── ghost_test.py      # offline end-to-end test (no real upstream calls)
 └── src/
-    ├── main.py            # FastAPI app, lifespan, router registration
-    ├── config.py          # pydantic-settings; loads .env
-    ├── models/            # pydantic schemas (Bolna request/response, Slack message)
-    ├── providers/         # async httpx clients (one per upstream)
-    ├── services/          # orchestration: CallService, AlertService
-    ├── routes/            # FastAPI routers: calls, alerts, webhook, health
-    └── utils/             # logger + OpenAPI metadata strings
+    ├── main.py            # FastAPI app, lifespan, conditional notifier construction
+    ├── config.py          # pydantic-settings; loads .env (every notifier is optional)
+    ├── models/
+    │   ├── bolna.py       # CallStatus, CallRequestModel, CallExecutionResponse, ...
+    │   └── slack.py       # Slack-compatible attachment/message shapes (also used by Mattermost)
+    ├── providers/
+    │   ├── bolna.py       # Bolna HTTP client (calls + executions)
+    │   ├── slack.py       # Slack notifier
+    │   ├── discord.py     # Discord notifier
+    │   ├── mattermost.py  # Mattermost notifier (reuses Slack formatter)
+    │   ├── clickup.py     # ClickUp notifier (task comments)
+    │   └── _attachment.py # shared Slack/Mattermost attachment builder
+    ├── services/
+    │   ├── call_service.py
+    │   └── notifier.py    # fan-out via asyncio.gather + skip-in-flight gate
+    ├── routes/            # calls, alerts, webhook, health
+    └── utils/             # logger + OpenAPI metadata
 ```
 
-The split is deliberate: routes call services, services call providers, providers are pure HTTP clients. No layer reaches around another.
+The split is deliberate: routes call services, services call providers, providers are pure HTTP clients. Each provider owns both its HTTP and its formatter.
+
+---
+
+## Testing
+
+A self-contained "ghost test" lives at [temp/ghost_test.py](temp/ghost_test.py). It boots the app with all four notifiers enabled but routes every upstream HTTP call (Bolna, Slack, Discord, Mattermost, ClickUp) through `httpx.MockTransport`, so nothing leaves the machine. Run it with:
+
+```bash
+uv run python temp/ghost_test.py
+```
+
+It exercises:
+
+- `/health` — reports all four notifiers
+- `/webhook/bolna` (in-flight status) — skipped, no fan-out
+- `/webhook/bolna` (terminal status) — fans out to all four
+- `/alerts/{id}` — fetches from (mock) Bolna, fans out to all four
+- Per-provider error isolation — a failing notifier doesn't block the rest
 
 ---
 
 ## Deployment
 
-This is a single FastAPI app — it'll run on any Python host. Below are the steps for **[Render](https://render.com)** (free tier works) since that's what this project is deployed on:
+This is a single FastAPI app — runs anywhere Python does. Steps for **[Render](https://render.com)** (free tier works):
 
 1. Push the repo to GitHub.
 2. On Render: **New → Web Service**, connect the GitHub repo.
@@ -140,7 +228,7 @@ This is a single FastAPI app — it'll run on any Python host. Below are the ste
    - **Runtime:** Python
    - **Build command:** `pip install uv && uv sync --frozen`
    - **Start command:** `uv run uvicorn src.main:app --host 0.0.0.0 --port $PORT`
-4. Under **Environment**, add the same variables you set in `.env` (`BOLNA_API_KEY`, `SLACK_BOT_TOKEN`, `SLACK_BASE_URL`, `SLACK_ALERT_CHANNEL`, `BOLNA_BASE_URL`).
+4. Under **Environment**, add the same variables you set in `.env`. Skip the providers you don't want — they auto-disable.
 5. Deploy. Render gives you a URL like `https://calling-tool.onrender.com`.
 6. In the Bolna dashboard, open your agent → **Analytics** → set the webhook URL to:
 
@@ -148,22 +236,26 @@ This is a single FastAPI app — it'll run on any Python host. Below are the ste
    https://<your-app>.onrender.com/webhook/bolna
    ```
 
-Bolna will now POST to your live service on every call status change, and the Slack alert fires automatically when the call ends.
+Bolna will now POST to your live service on every call status change, and the fan-out fires automatically when the call ends.
 
 ---
 
 ## Future scope
 
-Things deliberately left out to keep the surface area minimal for this assignment:
+Things deliberately left out to keep the surface area minimal:
 
-- **Authentication / authorization.** All endpoints are open right now — anyone who can reach the server can place calls or trigger alerts. Fine for a local / sandboxed deployment, not fine for production. The natural additions are an `X-API-Key` header check on `/calls` and `/alerts/{execution_id}`, or full Bearer/JWT auth via `fastapi.security` if this ever sits behind a real client. Bolna's `/webhook/bolna` is a separate concern — that one would be hardened by verifying a Bolna-signed header (or, simpler, an IP allowlist on the platform side).
+- **Authentication / authorization.** All endpoints are open right now. The natural additions are an `X-API-Key` header check on `/calls` and `/alerts/{execution_id}`, or full Bearer/JWT auth via `fastapi.security`. Bolna's `/webhook/bolna` is a separate concern — that one would be hardened by verifying a Bolna-signed header (or, simpler, an IP allowlist on the platform side).
 
-- **Batch endpoints.** Single-call/single-alert is the spec. If usage grows, the natural extensions are:
+- **Per-request notifier routing.** A `notify_to: ["slack","discord"]` knob on `/alerts/{execution_id}` to fan out to a subset.
+
+- **Retries / dead-letter** when a provider fails. Currently we log and move on.
+
+- **Batch endpoints.** Single-call/single-alert is the spec. If usage grows:
   - `POST /batch_calls` — accept a list of `CallRequestModel` and fan out via `asyncio.TaskGroup` with a `Semaphore` to cap concurrency against Bolna's rate limits.
-  - `POST /batch_alerts` — accept a list of `execution_id`s and trigger alerts in parallel.
+  - `POST /batch_alerts` — accept a list of `execution_id`s and trigger fan-outs in parallel.
   - `POST /webhook/bolna_batch` — receive an array of executions in one webhook call.
 
-  None are implemented; sketches live in `improvements.md`.
+  None are implemented; sketches live in [temp/improvements.md](temp/improvements.md).
 
 ---
 

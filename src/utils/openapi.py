@@ -7,22 +7,27 @@ API_DESCRIPTION = """
 Backend integration that:
 
 1. Initiates outbound voice calls via the **Bolna AI** API.
-2. Receives Bolna's status webhooks and posts a **Slack** alert when a call ends.
-3. Exposes a manual alert endpoint so a Slack message can be triggered for any past `execution_id`.
+2. Receives Bolna's status webhooks and fans them out to every enabled notifier
+   (**Slack** / **Discord** / **Mattermost** / **ClickUp**) when a call ends.
+3. Exposes a manual alert endpoint so the same fan-out can be triggered for any
+   past `execution_id`.
+
+A notifier is enabled when its env vars are set; missing vars silently disable
+it. `GET /health` reports which destinations are live.
 
 **Tags**
 
 - `calls` — initiate / fetch call executions on Bolna.
-- `alerts` — manually trigger a Slack alert for an existing execution.
+- `alerts` — manually fan-out an alert to every enabled notifier for an `execution_id`.
 - `webhook` — Bolna webhook receiver (called by Bolna, not by you).
-- `health` — liveness probe.
+- `health` — liveness probe + enabled notifiers list.
 """
 
 OPENAPI_TAGS = [
     {"name": "calls", "description": "Initiate outbound calls and fetch their execution data from Bolna."},
-    {"name": "alerts", "description": "Manually trigger a Slack alert for an execution_id (fetches from Bolna, then posts to Slack)."},
-    {"name": "webhook", "description": "Receives Bolna's status webhooks and posts to Slack when the call has ended."},
-    {"name": "health", "description": "Liveness probe."},
+    {"name": "alerts", "description": "Manually fan-out an alert (Slack / Discord / Mattermost / ClickUp) for an execution_id."},
+    {"name": "webhook", "description": "Receives Bolna's status webhooks and fans out to every enabled notifier when the call has ended."},
+    {"name": "health", "description": "Liveness probe + enabled notifiers."},
 ]
 
 
@@ -86,26 +91,34 @@ GET_CALL_RESPONSES = {
 
 # ─── POST /alerts/{execution_id} ──────────────────────────────────────────────
 
-ALERT_SUMMARY = "Manually trigger a Slack alert for an execution"
+ALERT_SUMMARY = "Manually fan-out an alert for an execution"
 ALERT_DESCRIPTION = (
-    "Fetches the execution from Bolna, then posts a formatted alert to the configured Slack channel — "
-    "regardless of the call's status. Useful for backfills or when the webhook didn't fire."
+    "Fetches the execution from Bolna, then fans a formatted alert out to every enabled notifier "
+    "(Slack / Discord / Mattermost / ClickUp) — regardless of the call's status. Useful for "
+    "backfills or when the webhook didn't fire. The response includes a per-provider `delivered` "
+    "map reporting `ok` or the error message."
 )
 ALERT_RESPONSES = {
     200: {
-        "description": "Alert sent.",
+        "description": "Alert dispatched. Per-provider outcome is in `delivered`.",
         "content": {
             "application/json": {
                 "example": {
                     "sent": True,
                     "execution_id": "7ce95e83-0b1b-452d-b687-91bf5d921bb3",
                     "status": "completed",
+                    "delivered": {
+                        "slack": "ok",
+                        "discord": "ok",
+                        "mattermost": "ok",
+                        "clickup": "ok",
+                    },
                 }
             }
         },
     },
     404: {"description": "No execution exists with this id on Bolna."},
-    502: {"description": "Bolna is unreachable, or Slack rejected the post."},
+    502: {"description": "Bolna is unreachable."},
 }
 
 
@@ -115,14 +128,21 @@ WEBHOOK_SUMMARY = "Bolna webhook receiver"
 WEBHOOK_DESCRIPTION = (
     "Bolna calls this endpoint on every status change. The handler:\n\n"
     "1. Parses the payload (`CallExecutionResponse` schema).\n"
-    "2. Skips the alert if the status indicates the call hasn't ended (`scheduled`, `queued`, `rescheduled`, `initiated`, `ringing`, `in-progress`, `canceled`).\n"
-    "3. Otherwise posts a formatted attachment to the configured Slack channel.\n\n"
+    "2. Skips the fan-out if the status indicates the call hasn't ended (`scheduled`, `queued`, `rescheduled`, `initiated`, `ringing`, `in-progress`, `canceled`).\n"
+    "3. Otherwise fans a formatted alert out to every enabled notifier (Slack / Discord / Mattermost / ClickUp) concurrently.\n\n"
     "Always returns 200 OK so Bolna does not retry."
 )
 WEBHOOK_RESPONSES = {
     200: {
-        "description": "Acknowledged. The Slack alert may or may not have been sent depending on `status`.",
-        "content": {"application/json": {"example": {"received": True}}},
+        "description": "Acknowledged. `delivered` reports per-provider outcome; empty when the call was in-flight.",
+        "content": {
+            "application/json": {
+                "example": {
+                    "received": True,
+                    "delivered": {"slack": "ok", "discord": "ok"},
+                }
+            }
+        },
     }
 }
 WEBHOOK_OPENAPI_EXTRA = {
@@ -177,6 +197,21 @@ WEBHOOK_OPENAPI_EXTRA = {
 
 # ─── GET /health ──────────────────────────────────────────────────────────────
 
-HEALTH_SUMMARY = "Liveness probe"
-HEALTH_DESCRIPTION = "Returns `{\"status\": \"ok\"}` if the process is up. No upstream calls."
-HEALTH_RESPONSES = {200: {"content": {"application/json": {"example": {"status": "ok"}}}}}
+HEALTH_SUMMARY = "Liveness probe + enabled notifiers"
+HEALTH_DESCRIPTION = (
+    "Returns `{\"status\": \"ok\", \"notifiers\": [...]}` if the process is up. "
+    "`notifiers` lists the names of the destinations whose env vars were present at startup. "
+    "No upstream calls."
+)
+HEALTH_RESPONSES = {
+    200: {
+        "content": {
+            "application/json": {
+                "example": {
+                    "status": "ok",
+                    "notifiers": ["slack", "discord", "mattermost", "clickup"],
+                }
+            }
+        }
+    }
+}
